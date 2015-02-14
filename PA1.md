@@ -36,7 +36,7 @@ Data pre-processing: restrict to complete cases
 cc_data <- readdata[complete.cases(readdata), ]
 ```
 
-A more careful analysis might also calculate log(steps + 1) to deal with the asymmetric interval distributions (discussed below) and turn date and interval into proper time codes.  
+A more careful analysis might also calculate `log(readdata$steps + 1)` to deal with the asymmetric interval distributions (discussed below) and turn date and interval into proper time codes.  
 
 NB  The approach I take here never modifies the dataframe that is built directly from the CSV, at the expense of creating several daughter dataframes.  For instance, when we impute values to NA observations, we start by making a complete copy of the dataset.  This is only feasible because the dataset is relatively small (about 52k cells, 351kB on disc).  
 
@@ -290,6 +290,108 @@ for (row in 1:nrow(imputed_data)) {
 }
 ```
 
+4. First, we'll build a version of `daily_data` with the newly-imputed data.  
+
+
+```r
+imputed_daily_data <- data.frame(date = factor(), total_steps = numeric(), nobs = integer())
+for (date in dates) {
+    # Set a default value, just in case
+    total_steps <- NA
+    total_steps <- sum(imputed_data[imputed_data$date == date, 'steps'])
+    nobs <- sum(!is.na(imputed_data[imputed_data$date == date, 'steps']))
+    # Put the data into a temporary data frame
+    new_row <- data.frame(date = date, total_steps = total_steps, nobs = nobs)
+    # And append it to the bottom of daily_data
+    imputed_daily_data <- rbind(imputed_daily_data, new_row)
+}
+# Convert $date to Date
+imputed_daily_data$date <- as.Date(imputed_daily_data$date)
+```
+
+Calculate mean and median. 
+
+
+```r
+summary(daily_data$total_steps)
+```
+
+```
+Daily total steps:     Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+Daily total steps:        0    6780   10400    9350   12800   21200
+```
+
+```r
+summary(imputed_daily_data$total_steps)
+```
+
+```
+Daily total steps:     Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+Daily total steps:       41    6780   10400    9500   12800   21200
+```
+
+
+```r
+imputed_mean_daily_steps <- mean(imputed_daily_data$total_steps)
+mean_daily_steps
+```
+
+```
+Mean daily total steps:  [1] 9354
+```
+
+```r
+imputed_mean_daily_steps
+```
+
+```
+Mean daily total steps:  [1] 9504
+```
+
+
+```r
+imputed_median_daily_steps <- median(imputed_daily_data$total_steps)
+median_daily_steps
+```
+
+```
+Median daily total steps:  [1] 10395
+```
+
+```r
+imputed_median_daily_steps
+```
+
+```
+Median daily total steps:  [1] 10395
+```
+
+And finally, plot the histogram. This uses the same code as with `daily_data` above, just with the imputed dataset.  
+
+
+
+```r
+# In ggplot
+# Set bin width (units: number of steps)
+binwidth <- 1000
+# Define the plot's data and basic aesthetic
+imputed_daily_data_plot <- ggplot(data = imputed_daily_data, aes(x = total_steps))
+daily_data_plot + 
+    # Histogram
+    geom_histogram(binwidth = binwidth, fill='blue') + 
+    # Rug
+    geom_rug(color = 'blue', alpha = .5) +
+    # Mean
+    geom_vline(aes(xintercept = imputed_mean_daily_steps), color='red') +
+    # Median
+    geom_vline(aes(xintercept = imputed_median_daily_steps), color='red', 
+               linetype='dashed') +
+    # Title
+    ggtitle('Distribution of total steps per day')
+```
+
+![](./PA1_files/figure-html/unnamed-chunk-23-1.png) 
+
 ## Are there differences in activity patterns between weekdays and weekends?
 
 1. Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day. 
@@ -331,6 +433,6 @@ weekday_pattern_plot + dpp_smoother +
     facet_wrap(~weekend, nrow=1)
 ```
 
-![](./PA1_files/figure-html/unnamed-chunk-20-1.png) 
+![](./PA1_files/figure-html/unnamed-chunk-25-1.png) 
 
 Differences between weekdays and weekends are suggested most clearly by the GAM estimate:  Weekdays have two clear peaks, between 6am and 10am and then again between 4pm and 8pm.  Weekends have more-or-less even levels of activity from 8am to 8pm.  

@@ -31,7 +31,7 @@ Data pre-processing: restrict to complete cases
 cc_data <- readdata[complete.cases(readdata), ]
 ```
 
-A more careful analysis might also calculate log(steps + 1) to deal with the asymmetric interval distributions (discussed below) and turn date and interval into proper time codes.  
+A more careful analysis might also calculate `log(readdata$steps + 1)` to deal with the asymmetric interval distributions (discussed below) and turn date and interval into proper time codes.  
 
 NB  The approach I take here never modifies the dataframe that is built directly from the CSV, at the expense of creating several daughter dataframes.  For instance, when we impute values to NA observations, we start by making a complete copy of the dataset.  This is only feasible because the dataset is relatively small (about 52k cells, 351kB on disc).  
 
@@ -220,9 +220,71 @@ for (row in 1:nrow(imputed_data)) {
 }
 ```
 
+4. First, we'll build a version of `daily_data` with the newly-imputed data.  
+
+```{r}
+imputed_daily_data <- data.frame(date = factor(), total_steps = numeric(), nobs = integer())
+for (date in dates) {
+    # Set a default value, just in case
+    total_steps <- NA
+    total_steps <- sum(imputed_data[imputed_data$date == date, 'steps'])
+    nobs <- sum(!is.na(imputed_data[imputed_data$date == date, 'steps']))
+    # Put the data into a temporary data frame
+    new_row <- data.frame(date = date, total_steps = total_steps, nobs = nobs)
+    # And append it to the bottom of daily_data
+    imputed_daily_data <- rbind(imputed_daily_data, new_row)
+}
+# Convert $date to Date
+imputed_daily_data$date <- as.Date(imputed_daily_data$date)
+```
+
+Calculate mean and median. In the following six displays, we first display the non-imputed statistics, then the statistics with imputed data.  
+
+```{r comment="Daily total steps: "}
+summary(daily_data$total_steps)
+summary(imputed_daily_data$total_steps)
+```
+
+```{r comment="Mean daily total steps: "}
+imputed_mean_daily_steps <- mean(imputed_daily_data$total_steps)
+mean_daily_steps
+imputed_mean_daily_steps
+```
+
+```{r comment="Median daily total steps: "}
+imputed_median_daily_steps <- median(imputed_daily_data$total_steps)
+median_daily_steps
+imputed_median_daily_steps
+```
+
+The median is unchanged, which is not surprising.  The mean is slightly higher with the imputed data (150 steps).  
+
+And finally, plot the histogram. This uses the same code as with `daily_data` above, just with the imputed dataset.  
+
+
+```{r}
+# In ggplot
+# Set bin width (units: number of steps)
+binwidth <- 1000
+# Define the plot's data and basic aesthetic
+imputed_daily_data_plot <- ggplot(data = imputed_daily_data, aes(x = total_steps))
+daily_data_plot + 
+    # Histogram
+    geom_histogram(binwidth = binwidth, fill='blue') + 
+    # Rug
+    geom_rug(color = 'blue', alpha = .5) +
+    # Mean
+    geom_vline(aes(xintercept = imputed_mean_daily_steps), color='red') +
+    # Median
+    geom_vline(aes(xintercept = imputed_median_daily_steps), color='red', 
+               linetype='dashed') +
+    # Title
+    ggtitle('Distribution of total steps per day')
+```
+
 ## Are there differences in activity patterns between weekdays and weekends?
 
-1. Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day. 
+1. To add a new factor column, we first construct a function that tells us whether a given date was on the weekend. It's then simple to build the column using `ifelse`.  
 
 ```{r}
 weekend <- function (date) {
@@ -238,7 +300,7 @@ imputed_data$weekend <- factor(ifelse(weekend(imputed_data$date),
 #                           ordered = FALSE)
 ```
 
-2. This is identical to the first question of "What is the average daily activity pattern?," with the addition of the "weekday" and "weekend" factors.  
+2. We take the same approach as in "What is the average daily activity pattern?," with the addition of the "weekday" and "weekend" factors.  
 
 ```{r message = FALSE}
 # This is ridiculously easy in ggplot
@@ -249,14 +311,14 @@ weekday_pattern_plot <- ggplot(data = imputed_data,
         geom_point(alpha = 0.3, color='blue') +
         scale_x_continuous(breaks = seq(0, 2300, 200)) +
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
-# Then we can reuse the same stats — they'll pick up the group automatically — 
-# plus a facet_wrap
+# Then we can reuse the same stats — they'll pick up the group automatically 
+# A facet_wrap separates everything by the weekend factor
 weekday_pattern_plot + dpp_smoother + 
     dpp_mean + 
     dpp_median + 
     coord_cartesian(ylim=ylim) + 
     ggtitle('Number of steps, by 5-minute interval') +
-    facet_wrap(~weekend, nrow=1)
+    facet_wrap(~weekend, nrow=1) 
 ```
 
 Differences between weekdays and weekends are suggested most clearly by the GAM estimate:  Weekdays have two clear peaks, between 6am and 10am and then again between 4pm and 8pm.  Weekends have more-or-less even levels of activity from 8am to 8pm.  
